@@ -30,6 +30,7 @@ namespace UserManagementAPI.Models
         [ForeignKey("Status")]
         public int StatusID { get; set; }
         public Status Status { get; set; }
+        public string VerificationToken { get; set; }
 
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
         public DateTime ModifiedAt { get; set; } = DateTime.UtcNow;

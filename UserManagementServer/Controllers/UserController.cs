@@ -6,6 +6,10 @@
     using UserManagementAPI.Helpers;
     using System;
     using Microsoft.EntityFrameworkCore;
+using System.Net.Mail;
+using System.Net;
+using System.Threading.Tasks;
+using UserManagementAPI.Services;
 
     namespace UserManagementAPI.Controllers
     {
@@ -14,15 +18,17 @@
         public class UserController : ControllerBase
         {
             private readonly ApplicationDbContext _context;
+            private readonly EmailService _emailService;
 
-            public UserController(ApplicationDbContext context)
-            {
-                _context = context;
-            }
+        public UserController(ApplicationDbContext context, EmailService emailService)
+        {
+            _context = context;
+            _emailService = emailService;
+        }
 
-            // Protect this API method with JWT authentication
-            // GET: api/user/getall
-            [HttpGet("getall")]
+        // Protect this API method with JWT authentication
+        // GET: api/user/getall
+        [HttpGet("getall")]
             [Authorize] // Requires a valid JWT token
             public IActionResult GetAllUsers()
             {
@@ -95,41 +101,70 @@
                 _context.Users.Remove(user);
                 _context.SaveChanges();
 
-                return Ok("User deleted successfully.");
+                return Ok(new { message = "User deleted successfully" , status = 200 });
             }
 
-            [HttpPost("add")]
-            [Authorize]
-            public IActionResult AddUser([FromBody] UserDetails model)
+
+        [HttpGet("verify-email")]
+        public IActionResult VerifyEmail(string token)
+        {
+            var user = _context.Users.FirstOrDefault(u => u.VerificationToken == token);
+
+            if (user == null)
             {
-                // Validate if the email already exists
-                if (_context.Users.Any(u => u.Email == model.Email))
-                {
-                    return BadRequest("Email is already in use.");
-                }
-
-                // Encrypt password using SHA256
-                string hashedPassword = PasswordHelper.HashPassword(model.Password);
-
-                // Create a new user
-                var user = new UserDetails
-                {
-                    FirstName = model.FirstName,
-                    LastName = model.LastName,
-                    Email = model.Email,
-                    Password = hashedPassword, // Store the encrypted password
-                    DateOfBirth = model.DateOfBirth,
-                    RoleTypeID = model.RoleTypeID, // Assume RoleTypeID is provided
-                    StatusID = model.StatusID, // Assume StatusID is provided
-                    CreatedAt = DateTime.UtcNow,
-                    ModifiedAt = DateTime.UtcNow
-                };
-
-                _context.Users.Add(user);
-                _context.SaveChanges();
-
-                return Created("User added successfully", user);
+                return NotFound("Invalid verification token.");
             }
 
+            // Activate the user account
+            user.StatusID = 1;
+            user.VerificationToken = null; // Clear the token
+            _context.SaveChanges();
+
+            return Ok("Email verified successfully. You can now log in.");
+        }
+
+
+        [HttpPost("add")]
+        [Authorize]
+        public async Task<IActionResult> AddUser([FromBody] UserDetails model)
+        {
+            if (_context.Users.Any(u => u.Email == model.Email))
+            {
+                return BadRequest("Email is already in use.");
+            }
+
+            // Encrypt password using SHA256
+            string hashedPassword = PasswordHelper.HashPassword(model.Password);
+
+            var verificationToken = Guid.NewGuid().ToString();
+
+            var user = new UserDetails
+            {
+                FirstName = model.FirstName,
+                LastName = model.LastName,
+                Email = model.Email,
+                Password = hashedPassword,
+                DateOfBirth = model.DateOfBirth,
+                RoleTypeID = model.RoleTypeID,
+                StatusID = 2, // Default status is deactivated
+                CreatedAt = DateTime.UtcNow,
+                ModifiedAt = DateTime.UtcNow,
+                VerificationToken = verificationToken
+            };
+
+            _context.Users.Add(user);
+            _context.SaveChanges();
+
+            // Generate verification URL
+            var verificationUrl = $"{Request.Scheme}://{Request.Host}/api/user/verify-email?token={verificationToken}";
+
+            // Send the verification email
+            await _emailService.SendEmailAsync(user.Email, "Email Verification", $"Please verify your email by clicking the following link: {verificationUrl}");
+
+            return Created("User added successfully", user);
         }
     }
+
+
+    }
+

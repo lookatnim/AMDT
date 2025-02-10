@@ -13,6 +13,8 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.IdentityModel.Tokens;
 using System.Linq;
 using System;
+using UserManagementAPI.Helpers;
+using UserManagementAPI.Services;
 
 namespace UserManagementServer
 {
@@ -29,6 +31,10 @@ namespace UserManagementServer
         {
             services.AddDbContext<ApplicationDbContext>(options =>
                 options.UseSqlServer(Configuration.GetConnectionString("DefaultConnection")));
+            services.Configure<MailSettings>(Configuration.GetSection("MailSettings"));
+
+
+            services.AddTransient<EmailService>();
 
             services.AddControllers();
 
@@ -55,10 +61,13 @@ namespace UserManagementServer
             if (env.IsDevelopment())
             {
                 app.UseDeveloperExceptionPage();
+                app.UseCors(builder =>
+                    builder.AllowAnyOrigin()
+                           .AllowAnyMethod()
+                           .AllowAnyHeader());
             }
 
             app.UseHttpsRedirection();
-
             app.UseRouting();
             app.UseAuthentication();
             app.UseAuthorization();
@@ -67,7 +76,8 @@ namespace UserManagementServer
             {
                 endpoints.MapControllers();
             });
-
+            app.UseDefaultFiles();
+            app.UseStaticFiles();
             // Seed the database with the admin user if it's empty
             SeedDatabase(context);
         }
